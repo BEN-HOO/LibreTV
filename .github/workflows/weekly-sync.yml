@@ -1,0 +1,45 @@
+name: Weekly upstream sync
+
+on:
+  schedule:
+    # Sunday 12:00 in Singapore / China (UTC+8).
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'BEN-HOO/LibreTV'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Merge upstream changes without discarding local configuration
+        env:
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          gh api --method POST "repos/${REPOSITORY}/merge-upstream" \
+            -f "branch=${DEFAULT_BRANCH}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Keep the schedule active during long upstream quiet periods
+        run: |
+          last_commit=$(git log -1 --format=%ct)
+          current_time=$(date +%s)
+          if [ "$((current_time - last_commit))" -ge 2592000 ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit --allow-empty -m 'chore: keep weekly upstream sync active'
+            git push origin HEAD
+          fi
